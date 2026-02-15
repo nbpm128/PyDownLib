@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pydownlib"
+version = "0.1.0"
+description = "Asynchronous download manager with resume capability and hash verification"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { file = "LICENSE" }
+authors = [
+    {name = "PyDownLib Contributors"}
+]
+
+dependencies = [
+    "aiofiles>=25.1.0",
+    "httpx>=0.28.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/nbpm128/PyDownLib"
+Documentation = "https://github.com/nbpm128/PyDownLib#readme"
+Repository = "https://github.com/nbpm128/PyDownLib.git"
+
+[project.scripts]
+pydownlib = "pydownlib.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["pydownlib"]
+
