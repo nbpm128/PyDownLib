@@ -9,7 +9,6 @@ Asynchronous download manager in Python with support for concurrent downloads, r
 - ✅ **Integrity verification** - verify files by hash (MD5, SHA1, SHA256)
 - ✅ **State persistence** - restore downloads after application restart
 - ✅ **Task management** - stop, resume, and track downloads
-- ⚠️ **CLI interface** - CLI interface for testing the download manager
 
 ## Requirements
 
