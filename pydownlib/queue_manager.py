@@ -1,34 +1,23 @@
-# ---------------------------------------------------------------------------
-# QueueManager
-# ---------------------------------------------------------------------------
 import asyncio
 from typing import Optional, Dict, List
 
-from pydownlib.async_logger import AsyncLogger
+from pydownlib import AsyncLogger
 
 
 class QueueManager:
-    """
-    Owns the asyncio.Queue and the pool of worker coroutines.
-
-    Responsibilities:
-    - creating / destroying the queue
-    - starting / stopping workers
-    - enqueuing task IDs
-    - routing each task ID to a handler callback
-    """
 
     def __init__(
-        self,
-        max_concurrent: int,
-        handler,            # async callable(task_id: str) -> None
-        logger: AsyncLogger,
+            self,
+            max_concurrent: int,
+            handler,  # async callable(task_id: str) -> None
+            logger: AsyncLogger,
     ) -> None:
         self._max_concurrent = max_concurrent
         self._handler = handler
         self._log = logger
 
         self._queue: Optional[asyncio.Queue] = None
+        self._paused: bool = False
         self._worker_tasks: List[asyncio.Task] = []
         self.active_downloads: Dict[str, asyncio.Task] = {}
 
@@ -44,30 +33,52 @@ class QueueManager:
     # Public API
     # ------------------------------------------------------------------
 
-    async def start(self, initial_task_ids: List[str]) -> None:
-        """Create queue, enqueue initial tasks, start workers, wait for completion."""
-        if self.is_running:
-            self._log.warning("QueueManager is already running")
+    def get_max_concurrent(self) -> int:
+        return self._max_concurrent
+
+    async def set_concurrency(self, new_max: int) -> None:
+        """ Change the number of worker coroutines at runtime. Can increase or decrease. """
+        if new_max < 1:
+            raise ValueError("new_max must be >= 1")
+        if self._queue is None:
+            self._max_concurrent = new_max
             return
 
-        self._queue = asyncio.Queue()
+        diff = new_max - self._max_concurrent
+        self._max_concurrent = new_max
 
-        for task_id in initial_task_ids:
-            await self._queue.put(task_id)
+        if diff > 0:
+            new_tasks = [asyncio.create_task(self._worker()) for _ in range(diff)]
+            self._worker_tasks.extend(new_tasks)
+            self._log.info("Added %d workers, total: %d", diff, new_max)
+        elif diff < 0:
+            for _ in range(-diff):
+                await self._queue.put(None)
+            self._log.info("Removing %d workers, target: %d", -diff, new_max)
 
-        self._log.debug(
-            "QueueManager started: %d tasks, %d workers",
-            len(initial_task_ids), self._max_concurrent
-        )
+    async def start(self) -> None:
+        """Launch workers if not already running."""
+        await self._launch_workers()
 
-        self._worker_tasks = [
-            asyncio.create_task(self._worker())
-            for _ in range(self._max_concurrent)
-        ]
+    async def pause(self) -> None:
+        """Interrupt active downloads, keep workers alive."""
+        for task_id in list(self.active_downloads.keys()):
+            self.cancel(task_id)
+        self._log.info("Queue paused: active downloads interrupted, workers alive")
 
-        await self._queue.join()
-        self._log.debug("All queued tasks processed")
+    async def stop(self) -> None:
+        """Drain active downloads, stop workers, destroy queue."""
+        await self.pause()
         await self._shutdown_workers()
+        self._log.info("Queue stopped")
+
+    def cancel(self, task_id: str) -> bool:
+        """Cancel an active download task. Returns True if cancelled."""
+        active = self.active_downloads.get(task_id)
+        if active and not active.done():
+            active.cancel()
+            return True
+        return False
 
     async def enqueue(self, task_id: str) -> None:
         """Add a task ID to the running queue (no-op if queue not started)."""
@@ -76,8 +87,8 @@ class QueueManager:
             return
         await self._queue.put(task_id)
 
-    def enqueue_nowait(self, task_id: str) -> None:
-        """Thread-safe enqueue via call_soon_threadsafe."""
+    def enqueue_threadsafe(self, task_id: str) -> None:
+        """Thread-safe enqueue for calls from sync context or other threads."""
         if self._queue is None:
             return
         loop = asyncio.get_event_loop()
@@ -85,26 +96,29 @@ class QueueManager:
             lambda tid=task_id: asyncio.ensure_future(self._queue.put(tid))
         )
 
-    def cancel_download(self, task_id: str) -> bool:
-        """Cancel an active download task. Returns True if cancelled."""
-        active = self.active_downloads.get(task_id)
-        if active and not active.done():
-            active.cancel()
-            return True
-        return False
-
-    def cancel_all(self) -> None:
-        """Cancel all active downloads and workers."""
-        for task_id in list(self.active_downloads.keys()):
-            self.cancel_download(task_id)
-        for wt in self._worker_tasks:
-            if not wt.done():
-                wt.cancel()
-        self._log.info("All downloads and workers cancelled")
 
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+
+    async def _launch_workers(self) -> None:
+        """Start workers and return immediately (persistent mode)."""
+        if self.is_running:
+            return
+
+        self._queue = asyncio.Queue()
+        self._worker_tasks = [
+            asyncio.create_task(self._worker())
+            for _ in range(self._max_concurrent)
+        ]
+        self._log.debug("QueueManager launched: %d workers", self._max_concurrent)
+
+    async def _shutdown_workers(self) -> None:
+        for _ in range(self._max_concurrent):
+            await self._queue.put(None)  # one sentinel per worker
+        await asyncio.gather(*self._worker_tasks, return_exceptions=True)
+        self._worker_tasks.clear()
+        self._queue = None
 
     async def _worker(self) -> None:
         worker_id = id(asyncio.current_task())
@@ -119,7 +133,7 @@ class QueueManager:
                 self._log.debug("Worker %d cancelled", worker_id)
                 break
 
-            if task_id is None:             # sentinel
+            if task_id is None:  # sentinel
                 self._queue.task_done()
                 self._log.debug("Worker %d received sentinel, stopping", worker_id)
                 break
@@ -137,11 +151,3 @@ class QueueManager:
                 self._log.error("Worker %d error on task %s: %s", worker_id, task_id, e)
             finally:
                 self._queue.task_done()
-
-    async def _shutdown_workers(self) -> None:
-        for _ in range(self._max_concurrent):
-            await self._queue.put(None)     # one sentinel per worker
-        await asyncio.gather(*self._worker_tasks, return_exceptions=True)
-        self._worker_tasks.clear()
-        self._queue = None
-

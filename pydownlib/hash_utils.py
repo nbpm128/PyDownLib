@@ -1,9 +1,5 @@
-"""
-Hash verification utilities for download manager
-"""
-
+import asyncio
 import hashlib
-import aiofiles
 
 
 class HashVerifier:
@@ -15,10 +11,10 @@ class HashVerifier:
     def validate_algorithm(cls, algorithm: str) -> bool:
         """
         Validate if algorithm is supported
-        
+
         Args:
             algorithm: Hash algorithm name
-            
+
         Returns:
             True if supported, False otherwise
         """
@@ -26,40 +22,50 @@ class HashVerifier:
 
     @classmethod
     async def calculate_hash(
-        cls,
-        filepath: str,
-        algorithm: str = "md5"
+            cls,
+            filepath: str,
+            algorithm: str = "md5",
     ) -> str:
         """
-        Calculate file hash asynchronously
-        
+        Calculate file hash asynchronously by offloading CPU/IO work to a
+        thread pool so the event loop stays responsive during large file reads.
+
         Args:
-            filepath: Path to file
+            filepath:  Path to file
             algorithm: Hash algorithm (md5, sha1, sha256)
-            
+
         Returns:
             Hex digest of the file
-            
+
         Raises:
-            ValueError: If algorithm is not supported
+            ValueError:        If algorithm is not supported
             FileNotFoundError: If file does not exist
         """
-        if not HashVerifier.validate_algorithm(algorithm):
+        algorithm = algorithm.lower()
+
+        if not cls.validate_algorithm(algorithm):
             raise ValueError(
                 f"Unsupported algorithm: {algorithm}. "
-                f"Supported: {', '.join(HashVerifier.SUPPORTED_ALGORITHMS)}"
+                f"Supported: {', '.join(cls.SUPPORTED_ALGORITHMS)}"
             )
 
-        hash_obj = hashlib.new(algorithm.lower())
-
         try:
-            async with aiofiles.open(filepath, 'rb') as f:
-                while True:
-                    chunk = await f.read(8192)
-                    if not chunk:
-                        break
-                    hash_obj.update(chunk)
+            return await asyncio.to_thread(
+                cls._calculate_hash_sync, filepath, algorithm
+            )
         except FileNotFoundError:
             raise FileNotFoundError(f"File not found: {filepath}")
 
+    @staticmethod
+    def _calculate_hash_sync(filepath: str, algorithm: str) -> str:
+        """
+        Synchronous hash calculation — intended to run in a thread pool.
+
+        Reads the file in 1 MB chunks to minimise the number of Python-level
+        loop iterations while keeping memory usage constant.
+        """
+        hash_obj = hashlib.new(algorithm)
+        with open(filepath, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                hash_obj.update(chunk)
         return hash_obj.hexdigest()
