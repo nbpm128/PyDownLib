@@ -16,7 +16,7 @@ class AsyncLogger:
         name: str,
         level: int = logging.DEBUG,
         log_file: Optional[str] = None,
-        fmt: str = "%(asctime)s [%(levelname)-8s] %(name)s — %(message)s",
+        fmt: str = "%(asctime)s.%(msecs)03d | %(levelname)-8s | %(name)s:%(funcName)s:%(lineno)d | %(message)s",
     ) -> None:
         self._name = name
         self._level = level
@@ -53,13 +53,13 @@ class AsyncLogger:
         """Background task: drain the queue and emit records."""
         while True:
             record = await self._queue.get()
-            if record is None:          # sentinel — stop
+            if record is None:
                 self._queue.task_done()
                 break
             try:
                 self._logger.handle(record)
             except Exception:
-                pass                    # never let the logger crash the app
+                pass
             finally:
                 self._queue.task_done()
 

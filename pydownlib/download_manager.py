@@ -300,18 +300,6 @@ class DownloadManager:
             self.tasks[tid].status = DownloadStatus.PENDING
             await self.queue_manager.enqueue(tid)
 
-    # async def pause_downloads(self) -> None:
-    #     """Interrupt active downloads, keep queue alive for new tasks."""
-    #     await self.queue_manager.pause()
-    #
-    #     paused_count = 0
-    #     for task in self.tasks.values():
-    #         if task.status == DownloadStatus.PENDING:
-    #             task.status = DownloadStatus.PAUSED
-    #             paused_count += 1
-    #
-    #     self._log.info("Downloads paused (%d pending task(s) marked paused)", paused_count)
-
     async def stop_downloads(self) -> None:
         """Stop all downloads and shut down workers. Requires start_downloads() to resume."""
         for task in self.tasks.values():
@@ -320,8 +308,6 @@ class DownloadManager:
 
         await self.queue_manager.stop()
         await self._log.stop()
-
-
 
     def stop_download(self, task_id: str) -> bool:
         """Pause a single active download."""
@@ -489,7 +475,7 @@ class DownloadManager:
                         task,
                         task_error_message=f"Download failed from all sources",
                         log_error_message=(f"Download failed from all sources ({failed_count} "
-                                          f"URL(s) tried). Last error: {error_msg}")
+                                           f"URL(s) tried). Last error: {error_msg}")
                     )
                     break
             except httpx.HTTPError as e:
@@ -544,7 +530,6 @@ class DownloadManager:
 
             if not content_length and "content-length" in head.headers:
                 content_length = int(head.headers["content-length"])
-
 
             filename = None
             if "content-disposition" in head.headers:
