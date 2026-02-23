@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pydownlib"
-version = "0.1.0"
-description = "Asynchronous download manager with resume capability and hash verification"
+version = "0.2.2"
+description = "Asynchronous download manager"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { file = "LICENSE" }
