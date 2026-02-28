@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 import uuid
 from datetime import datetime
@@ -10,7 +11,6 @@ from urllib.parse import urlparse
 import aiofiles
 import httpx
 
-from .async_logger import AsyncLogger
 from .hash_utils import HashVerifier
 from .models import DownloadTask, DownloadStatus, DownloadProgress, VerificationResult, \
     UrlInfo, FileInfo
@@ -37,10 +37,15 @@ class DownloadManager:
         self._post_processor = PostProcessor()
         self.tasks: Dict[str, DownloadTask] = {}
 
-        self._log = AsyncLogger(
-            name=__name__,
-            log_file=log_file,
-        )
+        self._log = logging.getLogger(__name__)
+        if log_file:
+            Path(log_file).parent.mkdir(parents=True, exist_ok=True)
+            handler = logging.FileHandler(log_file, encoding="utf-8")
+            handler.setFormatter(logging.Formatter(
+                "%(asctime)s.%(msecs)03d | %(levelname)-8s | %(name)s:%(funcName)s:%(lineno)d | %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            ))
+            self._log.addHandler(handler)
 
         self.queue_manager = QueueManager(
             max_concurrent=max_concurrent,
@@ -288,7 +293,6 @@ class DownloadManager:
 
     async def start_downloads(self) -> None:
         if not self.queue_manager.is_running:
-            self._log.start()
             await self.queue_manager.start()
 
         pending = [
@@ -307,7 +311,6 @@ class DownloadManager:
                 task.status = DownloadStatus.PAUSED
 
         await self.queue_manager.stop()
-        await self._log.stop()
 
     def stop_download(self, task_id: str) -> bool:
         """Pause a single active download."""

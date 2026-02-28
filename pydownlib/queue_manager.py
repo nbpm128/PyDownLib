@@ -1,7 +1,6 @@
 import asyncio
+import logging
 from typing import Optional, Dict, List
-
-from pydownlib import AsyncLogger
 
 
 class QueueManager:
@@ -10,7 +9,7 @@ class QueueManager:
             self,
             max_concurrent: int,
             handler,  # async callable(task_id: str) -> None
-            logger: AsyncLogger,
+            logger: logging.Logger,
     ) -> None:
         self._max_concurrent = max_concurrent
         self._handler = handler

@@ -8,7 +8,6 @@ from .models import (
 from .download_manager import DownloadManager
 from .hash_utils import HashVerifier
 from .queue_manager import QueueManager
-from .async_logger import AsyncLogger
 
 __version__ = "0.2.2"
 __all__ = [
@@ -20,5 +19,4 @@ __all__ = [
     "DownloadManager",
     "HashVerifier",
     "QueueManager",
-    "AsyncLogger"
 ]
