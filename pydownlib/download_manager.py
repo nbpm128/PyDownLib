@@ -459,12 +459,14 @@ class DownloadManager:
                     self._log.info("Download paused (cancelled): %s", task.task_id)
                 raise
 
-            except RuntimeError as e:
+            except (RuntimeError, httpx.HTTPError) as e:
                 error_msg = str(e)
                 self._log.warning(
                     "Download failed for task %s from %s: %s",
                     task.task_id, current_url, error_msg,
                 )
+
+                task.error_message = f"Mirror #{task.current_mirror_index + 1} failed: {error_msg}"
 
                 if task.switch_to_next_mirror():
                     self._log.info(
@@ -476,24 +478,16 @@ class DownloadManager:
                     failed_count = len(task.failed_urls)
                     self._mark_failed(
                         task,
-                        task_error_message=f"Download failed from all sources",
-                        log_error_message=(f"Download failed from all sources ({failed_count} "
-                                           f"URL(s) tried). Last error: {error_msg}")
+                        task_error_message=f"Download failed from all sources ({failed_count}). {error_msg}"
                     )
                     break
-            except httpx.HTTPError as e:
-                self._mark_failed(
-                    task,
-                    task_error_message=f"HTTP Error",
-                    log_error_message=f"HTTP error for task {task.task_id}: {e}"
-                )
             except Exception as e:
                 self._mark_failed(
                     task,
-                    task_error_message=f"Unexpected Error",
-                    log_error_message=f"Unexpected error for task {task.task_id}: {e}"
+                    task_error_message="Unexpected Error",
+                    log_error_message=f"Unexpected error for task {task.task_id}: {e}",
                 )
-                raise Exception(f"Unexpected Error: {task.task_id} - " + str(e))
+                raise
 
     @staticmethod
     def _filename_from_content_disposition(header: str) -> Optional[str]:
@@ -520,30 +514,35 @@ class DownloadManager:
     ) -> tuple[Optional[int], Optional[str]]:
         """Returns (content_length, filename_from_headers)."""
         current_url = task.get_current_mirror().url
+        content_length = None
+        response = None
+
         try:
-            head = await client.head(current_url)
-
-            content_length = None
-            if head.status_code >= 400:
-                head = await client.get(current_url, headers={"Range": "bytes=0-0"})
-
-                content_range = head.headers.get("Content-Range")
-                if content_range:
-                    content_length = int(content_range.split("/")[-1])
-
-            if not content_length and "content-length" in head.headers:
-                content_length = int(head.headers["content-length"])
-
-            filename = None
-            if "content-disposition" in head.headers:
-                filename = self._filename_from_content_disposition(
-                    head.headers["content-disposition"]
-                )
-
-            return content_length, filename
-        except httpx.ConnectError as e:
+            response = await client.head(current_url)
+        except httpx.TimeoutException as e:
             self._log.warning("HEAD request failed for %s: %s", task.task_id, e)
-            raise RuntimeError(f"HEAD request failed: {e}") from e
+
+        if not response or response.status_code >= 400:
+            try:
+                response = await client.get(current_url, headers={"Range": "bytes=0-0"})
+            except httpx.TimeoutException as e:
+                self._log.warning("GET request failed for %s: %s", task.task_id, e)
+                raise RuntimeError(f"Failed fetch info: {e}") from e
+
+            content_range = response.headers.get("Content-Range")
+            if content_range:
+                content_length = int(content_range.split("/")[-1])
+
+        if not content_length and "content-length" in response.headers:
+            content_length = int(response.headers["content-length"])
+
+        filename = None
+        if "content-disposition" in response.headers:
+            filename = self._filename_from_content_disposition(
+                response.headers["content-disposition"]
+            )
+
+        return content_length, filename
 
     async def _verify_hash(self, task: DownloadTask) -> bool:
         current_status = task.status
