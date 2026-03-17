@@ -603,7 +603,7 @@ class DownloadManager:
         self._log.info("Completed (%s): %s", reason, task.task_id)
         await self._post_processor_exec(task)
 
-    def _mark_failed(self, task: DownloadTask, task_error_message: str, log_error_message: str | None) -> None:
+    def _mark_failed(self, task: DownloadTask, task_error_message: str, log_error_message: str | None = None) -> None:
         task.status = DownloadStatus.FAILED
         task.error_message = task_error_message
         if not log_error_message:
