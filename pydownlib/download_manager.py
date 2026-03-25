@@ -570,16 +570,25 @@ class DownloadManager:
             if response.status_code not in (200, 206):
                 raise httpx.HTTPError(f"HTTP {response.status_code}")
 
+            # If we requested a range but server responded 200 (range not supported),
+            # fall back to a full download from scratch — never append in this case,
+            # otherwise already-downloaded bytes would be written twice.
+            range_ignored = local_size > 0 and response.status_code == 200
+
             if "content-length" in response.headers:
                 content_length = int(response.headers["content-length"])
                 task.total_bytes = (
                     remote_size if response.status_code == 206 else content_length
                 )
             else:
-                task.total_bytes = local_size
+                task.total_bytes = remote_size or local_size
 
-            task.downloaded_bytes = local_size
-            mode = "ab" if local_size > 0 else "wb"
+            if range_ignored:
+                task.downloaded_bytes = 0
+                mode = "wb"
+            else:
+                task.downloaded_bytes = local_size
+                mode = "ab" if local_size > 0 else "wb"
 
             Path(task.filepath).parent.mkdir(parents=True, exist_ok=True)
 
