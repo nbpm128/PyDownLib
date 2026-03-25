@@ -613,11 +613,14 @@ class DownloadManager:
     async def _post_processor_exec(self, task: DownloadTask) -> None:
         if task.extract:
             try:
+                task.status = DownloadStatus.PROCESSING
+                task.extract_progress = 0.0
                 await self._post_processor.run(task)
             except Exception as e:
-                # не роняем задачу — скачивание прошло успешно
                 self._log.error("Post-processing failed for %s: %s", task.task_id, e)
                 task.error_message = f"extract failed: {e}"
+            finally:
+                task.status = DownloadStatus.COMPLETED
 
     # ------------------------------------------------------------------
     # Queries
@@ -633,19 +636,18 @@ class DownloadManager:
             else 0.0
         )
 
-        result = DownloadProgress.from_dict(
-            {
-                "task_id": task.task_id,
-                "current_url": task.get_current_mirror().url,
-                "folder_path": task.folder_path,
-                "file_name": task.file_name,
-                "filepath": task.filepath,
-                "status": task.status,
-                "downloaded_bytes": task.downloaded_bytes,
-                "total_bytes": task.total_bytes,
-                "percentage": round(percentage, 2),
-            }
-        )
+        result = DownloadProgress.from_dict({
+            "task_id": task.task_id,
+            "current_url": task.get_current_mirror().url,
+            "folder_path": task.folder_path,
+            "file_name": task.file_name,
+            "filepath": task.filepath,
+            "status": task.status,
+            "downloaded_bytes": task.downloaded_bytes,
+            "total_bytes": task.total_bytes,
+            "percentage": round(percentage, 2),
+            "extract_progress": task.extract_progress if task.status == DownloadStatus.PROCESSING else None,
+        })
 
         mirror_info = task.get_mirror_info()
         if len(task.mirrors) > 1 or mirror_info.using_fallback_mirror:

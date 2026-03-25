@@ -12,10 +12,15 @@ class DownloadStatus(StrEnum):
     COMPLETED = "completed"
     FAILED = "failed"
     CHECKING = "checking"
+    PROCESSING = "processing"
 
 
 class ArchiveFormat(StrEnum):
     ZIP = "zip"
+    TAR = "tar"
+    TAR_GZ = "tar.gz"
+    TAR_BZ2 = "tar.bz2"
+    TAR_XZ = "tar.xz"
 
 
 class DictSerializable:
@@ -113,6 +118,7 @@ class DownloadTask(DictSerializable):
     current_mirror_index: int = 0  # index into mirrors list (by priority)
     failed_urls: List[str] = field(default_factory=list)
     extract: Optional[ExtractOptions] = None
+    extract_progress: float = 0.0
 
     # ------------------------------------------------------------------
     # Path helpers
@@ -248,6 +254,7 @@ class DownloadProgress(DictSerializable):
     total_bytes: int
     percentage: float
     mirror_info: Optional[MirrorInfo] = None
+    extract_progress: Optional[float] = None
 
 
 @dataclass
