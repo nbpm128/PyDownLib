@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass, asdict, field
 from typing import Optional, Dict, List, ClassVar
 from enum import StrEnum
@@ -224,6 +225,15 @@ class DownloadTask(DictSerializable):
         sorted_mirrors = self._sorted_mirrors()
         self.current_mirror_index = sorted_mirrors[0][0] if sorted_mirrors else 0
         self.failed_urls.clear()
+
+    def reset_for_retry(self) -> None:
+        """Reset task state for retry, resuming from partial file if it exists."""
+        self.reset_mirrors()
+        self.error_message = None
+        if self.filepath and os.path.exists(self.filepath):
+            self.downloaded_bytes = os.path.getsize(self.filepath)
+        else:
+            self.downloaded_bytes = 0
 
     def get_mirror_info(self) -> MirrorInfo:
         """Return diagnostic information about the current mirror state."""

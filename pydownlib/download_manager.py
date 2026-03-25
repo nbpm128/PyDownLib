@@ -326,7 +326,8 @@ class DownloadManager:
 
     async def resume_download(self, task_id: str) -> bool:
         task = self.tasks.get(task_id)
-        if task and task.status == DownloadStatus.PAUSED:
+        if task and task.status in (DownloadStatus.PAUSED, DownloadStatus.FAILED):
+            task.reset_for_retry()
             task.status = DownloadStatus.PENDING
             if self.queue_manager.is_running:
                 await self.queue_manager.enqueue(task_id)
